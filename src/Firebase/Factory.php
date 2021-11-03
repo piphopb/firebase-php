@@ -283,7 +283,7 @@ class Factory
         return null;
     }
 
-    protected function getProjectId(): ?ProjectId
+    protected function getProjectId(): ProjectId
     {
         if ($this->projectId !== null) {
             return $this->projectId;
@@ -296,7 +296,7 @@ class Factory
         }
 
         if ($this->discoveryIsDisabled) {
-            return null;
+            throw new RuntimeException('Unable to determine the Firebase Project ID, and credential discovery is disabled');
         }
 
         if (
@@ -311,11 +311,7 @@ class Factory
             return $this->projectId = ProjectId::fromString($projectId);
         }
 
-        if ($projectId = Util::getenv('GCLOUD_PROJECT')) {
-            return $this->projectId = ProjectId::fromString($projectId);
-        }
-
-        return null;
+        throw new RuntimeException('Unable to determine the Firebase Project ID');
     }
 
     protected function getClientEmail(): ?Email
@@ -351,32 +347,20 @@ class Factory
 
     protected function getDatabaseUri(): UriInterface
     {
-        if ($this->databaseUri !== null) {
-            return $this->databaseUri;
+        if ($this->databaseUri === null) {
+            $this->databaseUri = GuzzleUtils::uriFor(\sprintf(self::$databaseUriPattern, $this->getProjectId()->sanitizedValue()));
         }
 
-        $projectId = $this->getProjectId();
-
-        if ($projectId !== null) {
-            return $this->databaseUri = GuzzleUtils::uriFor(\sprintf(self::$databaseUriPattern, $projectId->sanitizedValue()));
-        }
-
-        throw new RuntimeException('Unable to build a database URI without a project ID');
+        return $this->databaseUri;
     }
 
-    protected function getStorageBucketName(): ?string
+    protected function getStorageBucketName(): string
     {
-        if ($this->defaultStorageBucket) {
-            return $this->defaultStorageBucket;
+        if ($this->defaultStorageBucket === null) {
+            $this->defaultStorageBucket = \sprintf(self::$storageBucketNamePattern, $this->getProjectId()->sanitizedValue());
         }
 
-        $projectId = $this->getProjectId();
-
-        if ($projectId !== null) {
-            return $this->defaultStorageBucket = \sprintf(self::$storageBucketNamePattern, $projectId->sanitizedValue());
-        }
-
-        return null;
+        return $this->defaultStorageBucket;
     }
 
     public function createAuth(): Contract\Auth
@@ -553,12 +537,7 @@ class Factory
             throw new RuntimeException('Unable to create a Storage Client without credentials');
         }
 
-        if ($projectId instanceof ProjectId) {
-            $config['projectId'] = $projectId->value();
-        } else {
-            // This is the case with user refresh credentials
-            $config['suppressKeyFileNotice'] = true;
-        }
+        $config['projectId'] = $projectId->value();
 
         try {
             $storageClient = new StorageClient($config);
@@ -609,7 +588,7 @@ class Factory
             'credentialsType' => $credentials !== null ? $credentials::class : null,
             'databaseUrl' => $databaseUrl,
             'defaultStorageBucket' => $this->defaultStorageBucket,
-            'projectId' => $projectId?->value(),
+            'projectId' => $this->getProjectId()->value(),
             'serviceAccount' => $serviceAccountInfo,
             'tenantId' => $this->tenantId?->toString(),
             'tokenCacheType' => $this->authTokenCache::class,
